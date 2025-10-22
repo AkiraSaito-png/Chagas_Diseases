@@ -1,0 +1,151 @@
+---
+title: "Chagas diseades"
+author: "Alessandro Akira Saito"
+date: "2025-09-23"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(survival)
+library(survminer)
+library(interval)
+library(Icens)
+```
+
+```{r}
+chagas_data <- get(load("G:/Outros computadores/Meu computador/Dev/Chagas Diseases/dados_Alesssandor_QV.RData"))
+```
+
+# Análise de sobrevivência
+
+O objetivo é estudar o tempo até o óbto do paciente durante o tratamento da doença de chagas
+
+```{r}
+surv_time <- chagas_data %>%
+  filter(SE006obito == 1, !is.na(SE019dt_ultimo_contato_hist)) %>%
+  count(ano_contato = format(SE019dt_ultimo_contato_hist, "%Y"))
+surv_time
+ggplot(surv_time, mapping = aes(x = ano_contato, y = n))+
+  geom_col(fill = "steelblue")+
+  labs(x = "Year", y= "Number of deaths")
+```
+
+
+## Estimador de Turnbull
+como os dados apresentados tem característica de censura intervalar, segundo as fotes, os métodos mais indicados são, 
+o estimador de Turnbull
+o modelo paramétrico de verosimilhança 
+e o modelo de Cox
+
+Primeiro temos que verificar se os dados se encaixam no contesto de censura intervalar
+
+```{r}
+chagas_data$tempo_acompanhamento_total <- as.numeric(difftime(
+  chagas_data$SE019dt_ultimo_contato_hist,
+  chagas_data$FQI001dt_entrada,
+  units = "days"
+))
+
+chagas_data$faixa_idade <- cut(
+  chagas_data$SE011idade_o1,
+  breaks = c(0, 40, 60, 80, Inf),
+  labels = c("<40", "40-59", "60-79", "80+"))
+  
+chagas_data$faixa_idade_homem <- ifelse(
+  chagas_data$SE004sexo == "Masculino",
+  cut(
+    chagas_data$SE011idade_o1,
+    breaks = c(0, 40, 60, 80, Inf),
+    labels = c("<40", "40-59", "60-79", "80+"),
+    right = FALSE
+  ),
+  NA
+)
+  
+chagas_data$faixa_idade_mulher <- ifelse(
+  chagas_data$SE004sexo == "Feminino",
+  cut(
+    chagas_data$SE011idade_o1,
+    breaks = c(0, 40, 60, 80, Inf),
+    labels = c("<40", "40-59", "60-79", "80+"),
+    right = FALSE
+  ),
+  NA
+)
+```
+
+```{r}
+surv_obj <- Surv(time = chagas_data$tempo_acompanhamento_total,
+                 event = chagas_data$SE006obito)
+
+# Kaplan-Meier
+ajuste_km_sexo <- survfit(surv_obj ~ chagas_data$SE004sexo)
+ajuste_km_idade <- survfit(surv_obj ~ chagas_data$faixa_idade)
+ajuste_km_idadeM <- survfit(surv_obj ~ chagas_data$faixa_idade_homem)
+ajuste_km_idadeF <- survfit(surv_obj ~ chagas_data$faixa_idade_mulher)
+
+plot(ajuste_km_sexo, xlab = "Dias de seguimento", ylab = "Probabilidade de sobrevivência", lty=c(5, 1), main = "Curva de sobrevivencia pelo sexo")
+legend(0, 0.6,
+ title = "Sexo",
+ legend=c("Homem", "Mulher"),
+ lty=c(5, 1), bty="n")
+plot(ajuste_km_idade, xlab = "Dias de seguimento", ylab = "Probabilidade de sobrevivência", lty=c(1, 5, 10, 15), main = "Curva de sobrevivencia pela idade")
+legend(0, 0.6,
+ title = "Faixa etária",
+ legend=c("<40", "40_59", "60_79", "80+"),
+ lty=c(1, 5, 10, 15), bty="n")
+plot(ajuste_km_idadeM, xlab = "Dias de seguimento", ylab = "Probabilidade de sobrevivência", lty=c(1, 5, 10, 15), main = "Curva de sobrevivencia pela idade do grupo masculino")
+legend(0, 0.6,
+ title = "Faixa etária",
+ legend=c("<40", "40_59", "60_79", "80+"),
+ lty=c(1, 5, 10, 15), bty="n")
+plot(ajuste_km_idadeF, xlab = "Dias de seguimento", ylab = "Probabilidade de sobrevivência", lty=c(1, 5, 10, 15), main = "Curva de sobrevivencia pela idade do grupo feminino")
+legend(0, 0.6,
+ title = "Faixa etária",
+ legend=c("<40", "40_59", "60_79", "80+"),
+ lty=c(1, 5, 10, 15), bty="n")
+```
+Teste de Log-Rank, para omparar as curvas
+```{r}
+survdiff(surv_obj ~ SE004sexo, data = chagas_data)
+survdiff(surv_obj ~ faixa_idade, data = chagas_data)
+survdiff(surv_obj ~ faixa_idade_homem, data = chagas_data)
+survdiff(surv_obj ~ faixa_idade_mulher, data = chagas_data)
+```
+# Modelo de Cox
+O modelo de riscos proporcionais de Cox analisa como variáveis explicativas (idade, sexo, presença de sintomas, etc.) afetam o tempo até o evento (ex.: óbito, recidiva, cura).
+
+```{r}
+chagas_data$tempo_acompanhamento_total <- as.numeric(difftime(
+  chagas_data$SE019dt_ultimo_contato_hist,
+  chagas_data$FQI001dt_entrada,
+  units = "days"
+))
+
+# Criar variável de evento corretamente (padrão: 1=evento, 0=censura)
+chagas_data$status_obito <- ifelse(chagas_data$SE006obito == 1, 1, 0)
+
+# Objeto de sobrevivência correto para dados right-censored
+surv_obj <- Surv(time = chagas_data$tempo_acompanhamento_total,
+                         event = chagas_data$status_obito)
+
+# Modelo de Cox com as variáveis de interesse
+cox_model <- coxph(surv_obj ~ SE004sexo + dom1b, 
+                          data = chagas_data)
+
+summary(cox_model)
+```
+
+```{r}
+plot(survfit(cox_model), 
+     xlab = "Dias de seguimento", 
+     ylab = "Probabilidade de sobrevivência",
+     main = "Curva de sobrevivência ajustada - Modelo de Cox")
+```
+
+```{r}
+
+```
+
