@@ -12,11 +12,47 @@ library(survival)
 library(survminer)
 library(interval)
 library(Icens)
+library(naniar)
+library(VIM)
+library(MissMech)
+library(lavaan)
 ```
 
 ```{r}
 chagas_data <- get(load("G:/Outros computadores/Meu computador/Dev/Chagas Diseases/dados_Alesssandor_QV.RData"))
 ```
+
+```{r}
+write.csv(chagas_data, "dados_Alesssandor_QV.csv", row.names = FALSE)
+```
+
+
+```{r}
+gg_miss_var(chagas_data)
+miss_var_summary(chagas_data)
+```
+
+Analise descritiva com dados faltantes
+```{r}
+# Descrição da amostra
+summary(chagas_data)
+
+# Padrão de dados faltantes
+aggr(chagas_data, numbers = TRUE)  # Matrix plot
+```
+Adequando o modelo WHOQOL-BREF
+```{r}
+modelo <- '
+  fisico =~ dom1b + SQQ028_dom1 + TQQ028_dom1 
+  psicologico =~ dom2b + SQQ029_dom2 + TQQ029_dom2 
+  social =~ dom3b + SQQ030_dom3 + TQQ030_dom3 
+  ambiente =~ dom4b + SQQ031_dom4 + TQQ031_dom4 
+'
+
+ajuste <- cfa(modelo, data = chagas_data, missing = "ml")
+summary(ajuste)
+```
+
 
 # Análise de sobrevivência
 
